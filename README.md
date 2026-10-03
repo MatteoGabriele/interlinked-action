@@ -44,10 +44,3 @@ Use `pull_request_target` so the token can write to PRs from forks. The action n
 
 `verdict` (`ai` or `human`), `probability`, `confidence`, and `signals` (JSON). The analysis is also written to the job summary.
 
-## Development
-
-The action bundles `@unveil/interlinked` from npm into `dist/index.mjs`, which is committed because Actions runs it straight from the repo. Rebuild after changing `src/` or bumping the detector:
-
-```sh
-pnpm build
-```
