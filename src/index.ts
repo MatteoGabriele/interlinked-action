@@ -6,9 +6,26 @@ interface PullRequestEvent {
 		number: number;
 		body: string | null;
 		base: { sha: string };
+		user: { login: string };
+		author_association?: string;
 	};
 	repository: { full_name: string };
 }
+
+type Mode = "full" | "labels" | "description" | "silent";
+
+const MODES: Mode[] = ["full", "labels", "description", "silent"];
+
+const AUTHOR_ASSOCIATIONS = [
+	"collaborator",
+	"contributor",
+	"first_timer",
+	"first_time_contributor",
+	"member",
+	"owner",
+];
+
+const DEFAULT_LABEL_AI = "likely-agent";
 
 /** Where GitHub looks for a PR template, in order. */
 const TEMPLATE_PATHS = [
@@ -25,6 +42,31 @@ function input(name: string) {
 	return (
 		process.env[`INPUT_${name.replace(/ /g, "_").toUpperCase()}`] ?? ""
 	).trim();
+}
+
+/** A list input, as a JSON array or comma-separated, lowercased. */
+function listInput(name: string) {
+	const value = input(name);
+	if (!value) {
+		return [];
+	}
+	let items: unknown[];
+	try {
+		const parsed = JSON.parse(value);
+		items = Array.isArray(parsed) ? parsed : value.split(",");
+	} catch {
+		items = value.split(",");
+	}
+	return items.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
+}
+
+function getMode(): Mode {
+	const value = input("mode").toLowerCase() || "full";
+	if ((MODES as string[]).includes(value)) {
+		return value as Mode;
+	}
+	console.log(`::warning::Invalid mode "${value}", falling back to "full".`);
+	return "full";
 }
 
 function setOutput(name: string, value: string) {
@@ -72,10 +114,7 @@ async function fetchTemplate(repo: string, ref: string) {
 }
 
 async function syncLabel(repo: string, number: number, isAi: boolean) {
-	const label = input("label");
-	if (!label) {
-		return;
-	}
+	const label = input("label-ai") || DEFAULT_LABEL_AI;
 	const path = `/repos/${repo}/issues/${number}/labels`;
 	const response = isAi
 		? await api(path, {
@@ -101,15 +140,26 @@ function stripBlock(body: string) {
 	return body.replace(BLOCK, "\n").trimEnd();
 }
 
+const ICONS =
+	"https://raw.githubusercontent.com/MatteoGabriele/interlinked/main/icons";
+
+function icon(name: string) {
+	return `<img src="${ICONS}/${name}.svg" width="16" height="16" alt="">`;
+}
+
 function render(result: AnalyzeTextResult) {
 	const score = Math.round(result.probability * 100);
 	const heading =
 		result.verdict === "ai"
-			? "🤖 Reads like an agent wrote it"
-			: "👤 Reads like a person wrote it";
-	const lines = [
-		`**interlinked:** ${heading} · agent-style score ${score}/100`,
-	];
+			? `${icon("shield-alert")} **Reads like an agent wrote it**`
+			: `${icon("heart-handshake")} **Reads like a person wrote it**`;
+	const lines = [`${heading} · agent-style score ${score}/100`];
+	const message = input(
+		result.verdict === "ai" ? "message-ai" : "message-human",
+	);
+	if (message) {
+		lines.push("", message);
+	}
 	if (result.signals.length > 0) {
 		lines.push(
 			"",
@@ -149,6 +199,18 @@ async function injectIntoBody(
 	}
 }
 
+async function closePull(repo: string, number: number) {
+	const response = await api(`/repos/${repo}/pulls/${number}`, {
+		method: "PATCH",
+		body: JSON.stringify({ state: "closed" }),
+	});
+	if (!response.ok) {
+		console.log(
+			`::warning::Couldn't close the PR: ${response.status} ${await response.text()}`,
+		);
+	}
+}
+
 /** Writing back is best effort. The outputs and summary still stand. */
 function warn(error: Error) {
 	console.log(`::warning::${error.message}`);
@@ -170,6 +232,23 @@ async function run() {
 		return;
 	}
 
+	const author = pull.user.login;
+	if (listInput("allowed-users").includes(author.toLowerCase())) {
+		console.log(`Skipping analysis for ${author}`);
+		return;
+	}
+	const association = pull.author_association?.toLowerCase();
+	const trusted = listInput("trusted-author-associations").filter((item) =>
+		AUTHOR_ASSOCIATIONS.includes(item),
+	);
+	if (association && trusted.includes(association)) {
+		console.log(
+			`Skipping analysis for ${author} (trusted author association: ${association})`,
+		);
+		return;
+	}
+
+	const mode = getMode();
 	const repo = event.repository.full_name;
 	const template = await fetchTemplate(repo, pull.base.sha).catch(
 		() => undefined,
@@ -187,13 +266,20 @@ async function run() {
 
 	const analysis = render(result);
 	summary(analysis);
-	if (input("update-description") !== "false") {
+	if (mode === "full" || mode === "description") {
 		await injectIntoBody(repo, pull, description, analysis).catch(warn);
 	}
 
-	await syncLabel(repo, pull.number, result.verdict === "ai").catch(warn);
+	const isAi = result.verdict === "ai";
+	if (mode === "full" || mode === "labels") {
+		await syncLabel(repo, pull.number, isAi).catch(warn);
+	}
 
-	if (result.verdict === "ai" && input("fail-on-ai") === "true") {
+	if (isAi && input("auto-close") === "true") {
+		await closePull(repo, pull.number).catch(warn);
+	}
+
+	if (isAi && input("fail-on-ai") === "true") {
 		console.log("::error::The PR description reads as agent-written.");
 		process.exitCode = 1;
 	}

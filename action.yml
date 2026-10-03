@@ -8,15 +8,39 @@ branding:
 inputs:
   github-token:
     description: "Token used to read the repo's PR template, update the PR description and manage the label. Needs `pull-requests: write`."
+    required: false
     default: ${{ github.token }}
-  update-description:
-    description: Append the analysis to the PR description, replacing it on later runs.
-    default: "true"
-  label:
-    description: Label to add when the description reads as agent-written, and remove when it doesn't. Leave empty to skip labeling.
+  allowed-users:
+    description: "List of usernames to skip from analysis. Can use array syntax in workflow YAML."
+    required: false
+    default: ""
+  trusted-author-associations:
+    description: "List of author associations to skip from analysis (collaborator, contributor, first_timer, first_time_contributor, member, owner). Can use array syntax in workflow YAML."
+    required: false
+    default: ""
+  mode:
+    description: "How interlinked should act on its findings: 'full' (description and labels), 'labels' (labels only), 'description' (description only), or 'silent' (outputs and job summary only)."
+    required: false
+    default: "full"
+  label-ai:
+    description: "Label to add when the description reads as agent-written, and remove when it doesn't."
+    required: false
+    default: "interlinked:agent-written"
+  auto-close:
+    description: "Whether to automatically close PRs whose description reads as agent-written."
+    required: false
+    default: "false"
+  message-ai:
+    description: "Custom message to add to the analysis when the description reads as agent-written."
+    required: false
+    default: ""
+  message-human:
+    description: "Custom message to add to the analysis when the description reads as human-written."
+    required: false
     default: ""
   fail-on-ai:
-    description: Fail the step when the description reads as agent-written.
+    description: "Fail the step when the description reads as agent-written."
+    required: false
     default: "false"
 
 outputs:
