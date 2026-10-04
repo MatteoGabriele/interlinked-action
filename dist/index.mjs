@@ -448,14 +448,97 @@ function analyzeText(markdown, options = {}) {
 	};
 }
 //#endregion
-//#region src/run.ts
+//#region src/analysis/marker.ts
+const START_MARKER = "<!-- interlinked:start -->";
+const END_MARKER = "<!-- interlinked:end -->";
+const ANALYSIS_BLOCK_PATTERN = new RegExp(`\\n*${START_MARKER}[\\s\\S]*?${END_MARKER}\\n*`, "g");
+/** Removes a previous run's analysis so it never counts toward the score. */
+function stripAnalysisBlock(body) {
+	return body.replace(ANALYSIS_BLOCK_PATTERN, "\n").trimEnd();
+}
+function appendAnalysisBlock(description, analysis) {
+	return `${description}\n\n${START_MARKER}\n---\n\n${analysis}\n${END_MARKER}\n`;
+}
+//#endregion
+//#region src/analysis/render.ts
+const ICONS_BASE_URL = "https://raw.githubusercontent.com/MatteoGabriele/interlinked/main/icons";
+function renderIcon(name) {
+	return `<img src="${ICONS_BASE_URL}/${name}.svg" width="16" height="16" alt="">`;
+}
+function renderHeading(result) {
+	const score = Math.round(result.probability * 100);
+	return `${result.verdict === "ai" ? `${renderIcon("shield-alert")} **Reads like an agent wrote it**` : `${renderIcon("heart-handshake")} **Reads like a person wrote it**`} · agent-style score ${score}/100`;
+}
+function formatContribution(contribution) {
+	return `${contribution > 0 ? "+" : ""}${contribution}`;
+}
+function renderSignalsTable(signals) {
+	return [
+		"<details><summary>Signals</summary>",
+		"",
+		"| Signal | Hits | Contribution |",
+		"| --- | --- | --- |",
+		...signals.map((signal) => `| ${signal.description} | ${signal.hits} | ${formatContribution(signal.contribution)} |`),
+		"",
+		"</details>"
+	].join("\n");
+}
+function renderAnalysis(result, customMessage) {
+	const sections = [renderHeading(result)];
+	if (customMessage) sections.push(customMessage);
+	if (result.signals.length > 0) sections.push(renderSignalsTable(result.signals));
+	return sections.join("\n\n");
+}
+//#endregion
+//#region src/utils/inputs.ts
+function readInput(name) {
+	const envName = `INPUT_${name.replace(/ /g, "_").toUpperCase()}`;
+	return (process.env[envName] ?? "").trim();
+}
+function readBooleanInput(name) {
+	return readInput(name) === "true";
+}
+/** Accepts a JSON array or a comma-separated string. */
+function readListInput(name) {
+	const rawValue = readInput(name);
+	if (!rawValue) return [];
+	return parseList(rawValue).map((item) => String(item).trim().toLowerCase()).filter(Boolean);
+}
+function parseList(rawValue) {
+	try {
+		const parsed = JSON.parse(rawValue);
+		return Array.isArray(parsed) ? parsed : rawValue.split(",");
+	} catch {
+		return rawValue.split(",");
+	}
+}
+//#endregion
+//#region src/utils/workflow.ts
+function logWarning(message) {
+	console.log(`::warning::${message}`);
+}
+function logError(message) {
+	console.log(`::error::${message}`);
+}
+function setOutput(name, value) {
+	const outputFile = process.env.GITHUB_OUTPUT;
+	if (!outputFile) return;
+	const delimiter = `interlinked_${Math.random().toString(36).slice(2)}`;
+	appendFileSync(outputFile, `${name}<<${delimiter}\n${value}\n${delimiter}\n`);
+}
+function appendJobSummary(markdown) {
+	const summaryFile = process.env.GITHUB_STEP_SUMMARY;
+	if (summaryFile) appendFileSync(summaryFile, `${markdown}\n`);
+}
+//#endregion
+//#region src/config.ts
 const MODES = [
 	"full",
 	"labels",
 	"description",
 	"silent"
 ];
-const AUTHOR_ASSOCIATIONS = [
+const KNOWN_AUTHOR_ASSOCIATIONS = [
 	"collaborator",
 	"contributor",
 	"first_timer",
@@ -463,54 +546,40 @@ const AUTHOR_ASSOCIATIONS = [
 	"member",
 	"owner"
 ];
-const DEFAULT_LABEL_AI = "likely-agent";
-/** Where GitHub looks for a PR template, in order. */
-const TEMPLATE_PATHS = [
-	".github/pull_request_template.md",
-	".github/PULL_REQUEST_TEMPLATE.md",
-	"pull_request_template.md",
-	"PULL_REQUEST_TEMPLATE.md",
-	"docs/pull_request_template.md",
-	"docs/PULL_REQUEST_TEMPLATE.md"
-];
-/** Reads an input the way the runner passes it: `INPUT_<NAME>` with spaces as underscores. */
-function input(name) {
-	return (process.env[`INPUT_${name.replace(/ /g, "_").toUpperCase()}`] ?? "").trim();
+const DEFAULT_AGENT_LABEL = "likely-agent";
+function readConfig() {
+	return {
+		mode: readMode(),
+		allowedUsers: readListInput("allowed-users"),
+		trustedAuthorAssociations: readListInput("trusted-author-associations").filter((association) => KNOWN_AUTHOR_ASSOCIATIONS.includes(association)),
+		agentLabel: readInput("label-ai") || DEFAULT_AGENT_LABEL,
+		agentMessage: readInput("message-ai"),
+		humanMessage: readInput("message-human"),
+		shouldAutoClose: readBooleanInput("auto-close"),
+		shouldFailOnAgent: readBooleanInput("fail-on-ai")
+	};
 }
-/** A list input, as a JSON array or comma-separated, lowercased. */
-function listInput(name) {
-	const value = input(name);
-	if (!value) return [];
-	let items;
-	try {
-		const parsed = JSON.parse(value);
-		items = Array.isArray(parsed) ? parsed : value.split(",");
-	} catch {
-		items = value.split(",");
-	}
-	return items.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
-}
-function getMode() {
-	const value = input("mode").toLowerCase();
-	if (value.trim() === "") return "labels";
-	if (MODES.includes(value)) return value;
-	console.log(`::warning::Invalid mode "${value}", falling back to "full".`);
+function readMode() {
+	const requestedMode = readInput("mode").toLowerCase() || "full";
+	if (isMode(requestedMode)) return requestedMode;
+	logWarning(`Invalid mode "${requestedMode}", falling back to "full".`);
 	return "full";
 }
-function setOutput(name, value) {
-	const file = process.env.GITHUB_OUTPUT;
-	if (!file) return;
-	const delimiter = `interlinked_${Math.random().toString(36).slice(2)}`;
-	appendFileSync(file, `${name}<<${delimiter}\n${value}\n${delimiter}\n`);
+function isMode(value) {
+	return MODES.includes(value);
 }
-function summary(markdown) {
-	const file = process.env.GITHUB_STEP_SUMMARY;
-	if (file) appendFileSync(file, `${markdown}\n`);
+function shouldUpdateDescription(mode) {
+	return mode === "full" || mode === "description";
 }
-const API = process.env.GITHUB_API_URL ?? "https://api.github.com";
-function api(path, init = {}) {
-	const token = input("github-token");
-	return fetch(`${API}${path}`, {
+function shouldSyncLabel(mode) {
+	return mode === "full" || mode === "labels";
+}
+//#endregion
+//#region src/utils/github-api.ts
+function githubRequest(path, init = {}) {
+	const baseUrl = process.env.GITHUB_API_URL ?? "https://api.github.com";
+	const token = readInput("github-token");
+	return fetch(`${baseUrl}${path}`, {
 		...init,
 		headers: {
 			Accept: "application/vnd.github+json",
@@ -520,117 +589,117 @@ function api(path, init = {}) {
 		}
 	});
 }
-async function fetchTemplate(repo, ref) {
-	for (const path of TEMPLATE_PATHS) {
-		const response = await api(`/repos/${repo}/contents/${path}?ref=${ref}`, { headers: { Accept: "application/vnd.github.raw+json" } });
+async function warnOnFailedResponse(response, failureMessage, { ignoreNotFound = false } = {}) {
+	if (response.ok || ignoreNotFound && response.status === 404) return;
+	logWarning(`${failureMessage}: ${response.status} ${await response.text()}`);
+}
+//#endregion
+//#region src/github/labels.ts
+async function syncAgentLabel(repo, pullNumber, label, isAgentWritten) {
+	const labelsPath = `/repos/${repo}/issues/${pullNumber}/labels`;
+	await warnOnFailedResponse(isAgentWritten ? await githubRequest(labelsPath, {
+		method: "POST",
+		body: JSON.stringify({ labels: [label] })
+	}) : await githubRequest(`${labelsPath}/${encodeURIComponent(label)}`, { method: "DELETE" }), `Couldn't update label "${label}"`, { ignoreNotFound: true });
+}
+//#endregion
+//#region src/github/pull-request.ts
+function patchPullRequest(repo, pullNumber, changes) {
+	return githubRequest(`/repos/${repo}/pulls/${pullNumber}`, {
+		method: "PATCH",
+		body: JSON.stringify(changes)
+	});
+}
+async function updatePullRequestBody(repo, pullNumber, body) {
+	await warnOnFailedResponse(await patchPullRequest(repo, pullNumber, { body }), "Couldn't update the PR description");
+}
+async function closePullRequest(repo, pullNumber) {
+	await warnOnFailedResponse(await patchPullRequest(repo, pullNumber, { state: "closed" }), "Couldn't close the PR");
+}
+//#endregion
+//#region src/github/template.ts
+const TEMPLATE_LOOKUP_PATHS = [
+	".github/pull_request_template.md",
+	".github/PULL_REQUEST_TEMPLATE.md",
+	"pull_request_template.md",
+	"PULL_REQUEST_TEMPLATE.md",
+	"docs/pull_request_template.md",
+	"docs/PULL_REQUEST_TEMPLATE.md"
+];
+async function fetchPullRequestTemplate(repo, ref) {
+	for (const templatePath of TEMPLATE_LOOKUP_PATHS) {
+		const response = await githubRequest(`/repos/${repo}/contents/${templatePath}?ref=${ref}`, { headers: { Accept: "application/vnd.github.raw+json" } });
 		if (response.ok) return response.text();
 	}
 }
-async function syncLabel(repo, number, isAi) {
-	const label = input("label-ai") || DEFAULT_LABEL_AI;
-	const path = `/repos/${repo}/issues/${number}/labels`;
-	let response;
-	if (isAi) response = await api(path, {
-		method: "POST",
-		body: JSON.stringify({ labels: [label] })
-	});
-	else response = await api(`${path}/${encodeURIComponent(label)}`, { method: "DELETE" });
-	if (!response.ok && response.status !== 404) console.log(`::warning::Couldn't update label "${label}": ${response.status} ${await response.text()}`);
-}
-/** Wraps the analysis in the PR body so reruns replace it instead of stacking. */
-const START = "<!-- interlinked:start -->";
-const END = "<!-- interlinked:end -->";
-const BLOCK = new RegExp(`\\n*${START}[\\s\\S]*?${END}\\n*`, "g");
-/** The body without our block, so it never counts toward the score. */
-function stripBlock(body) {
-	return body.replace(BLOCK, "\n").trimEnd();
-}
-const ICONS = "https://raw.githubusercontent.com/MatteoGabriele/interlinked/main/icons";
-function icon(name) {
-	return `<img src="${ICONS}/${name}.svg" width="16" height="16" alt="">`;
-}
-function render(result) {
-	const score = Math.round(result.probability * 100);
-	const lines = [`${result.verdict === "ai" ? `${icon("shield-alert")} **Reads like an agent wrote it**` : `${icon("heart-handshake")} **Reads like a person wrote it**`} · agent-style score ${score}/100`];
-	const message = input(result.verdict === "ai" ? "message-ai" : "message-human");
-	if (message) lines.push("", message);
-	if (result.signals.length > 0) {
-		lines.push("", "<details><summary>Signals</summary>", "", "| Signal | Hits | Contribution |", "| --- | --- | --- |");
-		for (const signal of result.signals) lines.push(`| ${signal.description} | ${signal.hits} | ${signal.contribution > 0 ? "+" : ""}${signal.contribution} |`);
-		lines.push("", "</details>");
-	}
-	return lines.join("\n");
-}
-async function injectIntoBody(repo, pull, description, analysis) {
-	const body = `${description}\n\n${START}\n---\n\n${analysis}\n${END}\n`;
-	if (body === pull.body) return;
-	const response = await api(`/repos/${repo}/pulls/${pull.number}`, {
-		method: "PATCH",
-		body: JSON.stringify({ body })
-	});
-	if (!response.ok) console.log(`::warning::Couldn't update the PR description: ${response.status} ${await response.text()}`);
-}
-async function closePull(repo, number) {
-	const response = await api(`/repos/${repo}/pulls/${number}`, {
-		method: "PATCH",
-		body: JSON.stringify({ state: "closed" })
-	});
-	if (!response.ok) console.log(`::warning::Couldn't close the PR: ${response.status} ${await response.text()}`);
-}
-/** Writing back is best effort. The outputs and summary still stand. */
-function warn(error) {
-	console.log(`::warning::${error.message}`);
-}
-async function run() {
+//#endregion
+//#region src/run.ts
+function readPullRequestEvent() {
 	const eventPath = process.env.GITHUB_EVENT_PATH;
 	if (!eventPath) throw new Error("GITHUB_EVENT_PATH is not set. Is this running in Actions?");
-	const event = JSON.parse(readFileSync(eventPath, "utf8"));
-	const pull = event.pull_request;
-	if (!pull) {
-		console.log("::warning::No pull request in this event. Run on pull_request or pull_request_target.");
-		return;
-	}
+	return JSON.parse(readFileSync(eventPath, "utf8"));
+}
+function findSkipReason(pull, config) {
 	const author = pull.user.login;
-	if (listInput("allowed-users").includes(author.toLowerCase())) {
-		console.log(`Skipping analysis for ${author}`);
-		return;
-	}
+	if (config.allowedUsers.includes(author.toLowerCase())) return `Skipping analysis for ${author}`;
 	const association = pull.author_association?.toLowerCase();
-	const trusted = listInput("trusted-author-associations").filter((item) => AUTHOR_ASSOCIATIONS.includes(item));
-	if (association && trusted.includes(association)) {
-		console.log(`Skipping analysis for ${author} (trusted author association: ${association})`);
+	if (association && config.trustedAuthorAssociations.includes(association)) return `Skipping analysis for ${author} (trusted author association: ${association})`;
+}
+async function fetchTemplateSafely(repo, ref) {
+	try {
+		return await fetchPullRequestTemplate(repo, ref);
+	} catch (error) {
+		logWarning(`Couldn't fetch the PR template, analyzing without it: ${error.message}`);
 		return;
 	}
-	const mode = getMode();
-	const repo = event.repository.full_name;
-	let template;
-	try {
-		template = await fetchTemplate(repo, pull.base.sha);
-	} catch (error) {
-		console.log(`::warning::Couldn't fetch the PR template, analyzing without it: ${error.message}`);
-	}
-	const description = stripBlock(pull.body ?? "");
-	const result = analyzeText(description, { template });
-	console.log(`#${pull.number}: ${result.verdict} (probability ${result.probability})`);
+}
+function publishOutputs(result) {
 	setOutput("verdict", result.verdict);
 	setOutput("probability", String(result.probability));
 	setOutput("confidence", String(result.confidence));
 	setOutput("signals", JSON.stringify(result.signals));
-	const analysis = render(result);
-	summary(analysis);
-	if (mode === "full" || mode === "description") await injectIntoBody(repo, pull, description, analysis).catch(warn);
-	const isAi = result.verdict === "ai";
-	if (mode === "full" || mode === "labels") await syncLabel(repo, pull.number, isAi).catch(warn);
-	if (isAi && input("auto-close") === "true") await closePull(repo, pull.number).catch(warn);
-	if (isAi && input("fail-on-ai") === "true") {
-		console.log("::error::The PR description reads as agent-written.");
+}
+/** Writing back is best effort: outputs and summary still stand. */
+function warnOnError(error) {
+	logWarning(error.message);
+}
+async function run() {
+	const event = readPullRequestEvent();
+	const pull = event.pull_request;
+	if (!pull) {
+		logWarning("No pull request in this event. Run on pull_request or pull_request_target.");
+		return;
+	}
+	const config = readConfig();
+	const skipReason = findSkipReason(pull, config);
+	if (skipReason) {
+		console.log(skipReason);
+		return;
+	}
+	const repo = event.repository.full_name;
+	const template = await fetchTemplateSafely(repo, pull.base.sha);
+	const description = stripAnalysisBlock(pull.body ?? "");
+	const result = analyzeText(description, { template });
+	const isAgentWritten = result.verdict === "ai";
+	console.log(`#${pull.number}: ${result.verdict} (probability ${result.probability})`);
+	publishOutputs(result);
+	const analysis = renderAnalysis(result, isAgentWritten ? config.agentMessage : config.humanMessage);
+	appendJobSummary(analysis);
+	if (shouldUpdateDescription(config.mode)) {
+		const updatedBody = appendAnalysisBlock(description, analysis);
+		if (updatedBody !== pull.body) await updatePullRequestBody(repo, pull.number, updatedBody).catch(warnOnError);
+	}
+	if (shouldSyncLabel(config.mode)) await syncAgentLabel(repo, pull.number, config.agentLabel, isAgentWritten).catch(warnOnError);
+	if (isAgentWritten && config.shouldAutoClose) await closePullRequest(repo, pull.number).catch(warnOnError);
+	if (isAgentWritten && config.shouldFailOnAgent) {
+		logError("The PR description reads as agent-written.");
 		process.exitCode = 1;
 	}
 }
 //#endregion
 //#region src/index.ts
 run().catch((error) => {
-	console.log(`::error::${error.message}`);
+	logError(error.message);
 	process.exitCode = 1;
 });
 //#endregion

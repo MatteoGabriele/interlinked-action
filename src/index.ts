@@ -1,6 +1,7 @@
 import { run } from "./run";
+import { logError } from "./utils/workflow";
 
 run().catch((error: Error) => {
-	console.log(`::error::${error.message}`);
+	logError(error.message);
 	process.exitCode = 1;
 });
