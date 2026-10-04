@@ -7,6 +7,13 @@
 
 <h1 align="center">Interlinked</h1>
 
+<p align="center">
+  <a href="https://github.com/MatteoGabriele/interlinked-action/releases/latest"><img src="https://img.shields.io/github/v/release/MatteoGabriele/interlinked-action?label=release&color=8b5cf6" alt="Latest release"></a>
+  <a href="https://www.npmjs.com/package/@unveil/interlinked"><img src="https://img.shields.io/npm/v/@unveil/interlinked?label=interlinked&color=8b5cf6" alt="interlinked version"></a>
+  <img src="https://img.shields.io/badge/runtime-node24-339933?logo=nodedotjs&logoColor=white" alt="Runs on Node 24">
+  <a href="./package.json"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
+
 Runs the [interlinked](https://github.com/unveil-project/interlinked) detector on a pull request's description and appends the result to the description itself, inside an `<!-- interlinked:start -->` … `<!-- interlinked:end -->` block. Later runs replace that block, and it is stripped before analysis so it never affects the score.
 
 ```yaml
