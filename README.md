@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-<h1 align="center">Interlinked GitHub Action</h1>
+<h1 align="center">Interlinked</h1>
 
 Runs the [interlinked](https://github.com/unveil-project/interlinked) detector on a pull request's description and appends the result to the description itself, inside an `<!-- interlinked:start -->` … `<!-- interlinked:end -->` block. Later runs replace that block, and it is stripped before analysis so it never affects the score.
 
