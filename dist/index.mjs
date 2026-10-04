@@ -462,7 +462,6 @@ function appendAnalysisBlock(description, analysis) {
 //#endregion
 //#region src/analysis/render.ts
 const ICONS_BASE_URL = "https://raw.githubusercontent.com/MatteoGabriele/interlinked/main/icons";
-/** GitHub links bare images to their source; wrapping them in `<picture>` keeps them unclickable. */
 function renderIcon(name) {
 	return `<picture><img src="${ICONS_BASE_URL}/${name}.svg" width="16" height="16" alt=""></picture>`;
 }
@@ -593,18 +592,21 @@ function githubRequest(path, init = {}) {
 		}
 	});
 }
-async function warnOnFailedResponse(response, failureMessage, { ignoreNotFound = false } = {}) {
-	if (response.ok || ignoreNotFound && response.status === 404) return;
+async function warnOnFailedResponse(response, failureMessage) {
+	if (response.ok) return;
 	logWarning(`${failureMessage}: ${response.status} ${await response.text()}`);
 }
 //#endregion
 //#region src/github/labels.ts
-async function syncAgentLabel(repo, pullNumber, label, isAgentWritten) {
-	const labelsPath = `/repos/${repo}/issues/${pullNumber}/labels`;
-	await warnOnFailedResponse(isAgentWritten ? await githubRequest(labelsPath, {
+/**
+* Only ever adds the label. Removing it is left to maintainers, so an author
+* can't edit the description until a rerun clears the flag.
+*/
+async function addAgentLabel(repo, pullNumber, label) {
+	await warnOnFailedResponse(await githubRequest(`/repos/${repo}/issues/${pullNumber}/labels`, {
 		method: "POST",
 		body: JSON.stringify({ labels: [label] })
-	}) : await githubRequest(`${labelsPath}/${encodeURIComponent(label)}`, { method: "DELETE" }), `Couldn't update label "${label}"`, { ignoreNotFound: true });
+	}), `Couldn't add label "${label}"`);
 }
 //#endregion
 //#region src/github/pull-request.ts
@@ -693,7 +695,7 @@ async function run() {
 		const updatedBody = appendAnalysisBlock(description, analysis);
 		if (updatedBody !== pull.body) await updatePullRequestBody(repo, pull.number, updatedBody).catch(warnOnError);
 	}
-	if (shouldSyncLabel(config.mode)) await syncAgentLabel(repo, pull.number, config.agentLabel, isAgentWritten).catch(warnOnError);
+	if (isAgentWritten && shouldSyncLabel(config.mode)) await addAgentLabel(repo, pull.number, config.agentLabel).catch(warnOnError);
 	if (isAgentWritten && config.shouldAutoClose) await closePullRequest(repo, pull.number).catch(warnOnError);
 	if (isAgentWritten && config.shouldFailOnAgent) {
 		logError("The PR description reads as agent-written.");

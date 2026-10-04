@@ -43,7 +43,7 @@ Use `pull_request_target` so the token can write to PRs from forks. The action n
 | `allowed-users` | | Usernames to skip, comma-separated or as a JSON array. |
 | `trusted-author-associations` | `member,owner` | Author associations to skip (`collaborator`, `contributor`, `first_timer`, `first_time_contributor`, `member`, `owner`), comma-separated or as a JSON array. Set to `""` to analyze everyone. |
 | `mode` | `labels` | `full` (description and labels), `labels` (labels only), `description` (description only) or `silent` (outputs and job summary only). |
-| `label-ai` | `agent-written` | Label to add when the verdict is `ai` and remove otherwise. |
+| `label-ai` | `agent-written` | Label to add when the verdict is `ai`. It's never removed automatically, so editing the description can't clear it; a maintainer removes it. |
 | `auto-close` | `false` | Close the PR when the verdict is `ai`. |
 | `message-ai` | | Custom message added to the analysis when the verdict is `ai`. |
 | `message-human` | | Custom message added to the analysis when the verdict is `human`. |

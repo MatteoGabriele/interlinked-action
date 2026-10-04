@@ -1,23 +1,17 @@
 import { githubRequest, warnOnFailedResponse } from "../utils/github-api";
 
-export async function syncAgentLabel(
+export async function addAgentLabel(
 	repo: string,
 	pullNumber: number,
 	label: string,
-	isAgentWritten: boolean,
 ) {
-	const labelsPath = `/repos/${repo}/issues/${pullNumber}/labels`;
+	const response = await githubRequest(
+		`/repos/${repo}/issues/${pullNumber}/labels`,
+		{
+			method: "POST",
+			body: JSON.stringify({ labels: [label] }),
+		},
+	);
 
-	const response = isAgentWritten
-		? await githubRequest(labelsPath, {
-				method: "POST",
-				body: JSON.stringify({ labels: [label] }),
-			})
-		: await githubRequest(`${labelsPath}/${encodeURIComponent(label)}`, {
-				method: "DELETE",
-			});
-
-	await warnOnFailedResponse(response, `Couldn't update label "${label}"`, {
-		ignoreNotFound: true,
-	});
+	await warnOnFailedResponse(response, `Couldn't add label "${label}"`);
 }

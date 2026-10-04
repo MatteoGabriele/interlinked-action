@@ -171,17 +171,17 @@ describe("full mode", () => {
 		});
 	});
 
-	it("removes the label when the verdict is human", async () => {
+	it("leaves the label alone when the verdict is human", async () => {
 		await runAction({
 			verdict: "human",
 			inputs: { mode: "full", "label-ai": "bot" },
 		});
 
-		expect(requests).toContainEqual({
-			method: "DELETE",
-			path: `/repos/${REPO}/issues/${PR}/labels/bot`,
-			body: undefined,
-		});
+		expect(requests).not.toContainEqual(
+			expect.objectContaining({
+				path: expect.stringContaining(`/issues/${PR}/labels`),
+			}),
+		);
 	});
 });
 

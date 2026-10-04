@@ -19,9 +19,8 @@ export function githubRequest(path: string, init: RequestInit = {}) {
 export async function warnOnFailedResponse(
 	response: Response,
 	failureMessage: string,
-	{ ignoreNotFound = false } = {},
 ) {
-	if (response.ok || (ignoreNotFound && response.status === 404)) {
+	if (response.ok) {
 		return;
 	}
 

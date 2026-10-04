@@ -23,7 +23,7 @@ inputs:
     required: false
     default: "labels"
   label-ai:
-    description: "Label to add when the description reads as agent-written, and remove when it doesn't."
+    description: "Label to add when the description reads as agent-written. Never removed automatically; a maintainer clears it."
     required: false
     default: "agent-written"
   auto-close:

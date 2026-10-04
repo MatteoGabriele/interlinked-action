@@ -8,7 +8,7 @@ import {
 	shouldSyncLabel,
 	shouldUpdateDescription,
 } from "./config";
-import { syncAgentLabel } from "./github/labels";
+import { addAgentLabel } from "./github/labels";
 import { closePullRequest, updatePullRequestBody } from "./github/pull-request";
 import { fetchPullRequestTemplate } from "./github/template";
 import type { PullRequest, PullRequestEvent } from "./types";
@@ -112,13 +112,10 @@ export async function run() {
 		}
 	}
 
-	if (shouldSyncLabel(config.mode)) {
-		await syncAgentLabel(
-			repo,
-			pull.number,
-			config.agentLabel,
-			isAgentWritten,
-		).catch(warnOnError);
+	if (isAgentWritten && shouldSyncLabel(config.mode)) {
+		await addAgentLabel(repo, pull.number, config.agentLabel).catch(
+			warnOnError,
+		);
 	}
 
 	if (isAgentWritten && config.shouldAutoClose) {
