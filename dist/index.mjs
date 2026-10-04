@@ -462,8 +462,9 @@ function appendAnalysisBlock(description, analysis) {
 //#endregion
 //#region src/analysis/render.ts
 const ICONS_BASE_URL = "https://raw.githubusercontent.com/MatteoGabriele/interlinked/main/icons";
+/** GitHub links bare images to their source; wrapping them in `<picture>` keeps them unclickable. */
 function renderIcon(name) {
-	return `<img src="${ICONS_BASE_URL}/${name}.svg" width="16" height="16" alt="">`;
+	return `<picture><img src="${ICONS_BASE_URL}/${name}.svg" width="16" height="16" alt=""></picture>`;
 }
 function renderHeading(result) {
 	const score = Math.round(result.probability * 100);

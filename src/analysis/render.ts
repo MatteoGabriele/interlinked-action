@@ -6,7 +6,7 @@ const ICONS_BASE_URL =
 	"https://raw.githubusercontent.com/MatteoGabriele/interlinked/main/icons";
 
 function renderIcon(name: string) {
-	return `<img src="${ICONS_BASE_URL}/${name}.svg" width="16" height="16" alt="">`;
+	return `<picture><img src="${ICONS_BASE_URL}/${name}.svg" width="16" height="16" alt=""></picture>`;
 }
 
 function renderHeading(result: AnalyzeTextResult) {
