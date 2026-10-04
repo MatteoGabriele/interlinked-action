@@ -32,8 +32,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: MatteoGabriele/interlinked@v0
-        with:
-          trusted-author-associations: "member,owner" # optional
 ```
 
 Use `pull_request_target` so the token can write to PRs from forks. The action never checks out or runs PR code, so that's safe here. Edits made with the default `GITHUB_TOKEN` don't trigger new workflow runs, so updating the description doesn't loop.
@@ -44,8 +42,8 @@ Use `pull_request_target` so the token can write to PRs from forks. The action n
 | --- | --- | --- |
 | `github-token` | `${{ github.token }}` | Reads the PR template, updates the description, manages the label. |
 | `allowed-users` | | Usernames to skip, comma-separated or as a JSON array. |
-| `trusted-author-associations` | | Author associations to skip (`collaborator`, `contributor`, `first_timer`, `first_time_contributor`, `member`, `owner`), comma-separated or as a JSON array. |
-| `mode` | `full` | `full` (description and labels), `labels` (labels only), `description` (description only) or `silent` (outputs and job summary only). |
+| `trusted-author-associations` | `member,owner` | Author associations to skip (`collaborator`, `contributor`, `first_timer`, `first_time_contributor`, `member`, `owner`), comma-separated or as a JSON array. Set to `""` to analyze everyone. |
+| `mode` | `labels` | `full` (description and labels), `labels` (labels only), `description` (description only) or `silent` (outputs and job summary only). |
 | `label-ai` | `agent-written` | Label to add when the verdict is `ai` and remove otherwise. |
 | `auto-close` | `false` | Close the PR when the verdict is `ai`. |
 | `message-ai` | | Custom message added to the analysis when the verdict is `ai`. |

@@ -15,13 +15,13 @@ inputs:
     required: false
     default: ""
   trusted-author-associations:
-    description: "List of author associations to skip from analysis (collaborator, contributor, first_timer, first_time_contributor, member, owner). Can use array syntax in workflow YAML."
+    description: "List of author associations to skip from analysis (collaborator, contributor, first_timer, first_time_contributor, member, owner). Can use array syntax in workflow YAML. Set to an empty string to analyze everyone."
     required: false
-    default: ""
+    default: "member,owner"
   mode:
     description: "How interlinked should act on its findings: 'full' (description and labels), 'labels' (labels only), 'description' (description only), or 'silent' (outputs and job summary only)."
     required: false
-    default: "full"
+    default: "labels"
   label-ai:
     description: "Label to add when the description reads as agent-written, and remove when it doesn't."
     required: false

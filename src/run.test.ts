@@ -132,7 +132,7 @@ describe("analysis", () => {
 	});
 
 	it("ignores its own previous analysis when scoring a rerun", async () => {
-		await runAction({ body: "Fixes the thing." });
+		await runAction({ body: "Fixes the thing.", inputs: { mode: "full" } });
 		const firstRunBody = newBody() as string;
 
 		await runAction({ body: firstRunBody });
@@ -146,7 +146,11 @@ describe("analysis", () => {
 
 describe("full mode", () => {
 	it("appends the analysis to the PR description", async () => {
-		await runAction({ verdict: "ai", body: "Fixes the thing." });
+		await runAction({
+			verdict: "ai",
+			body: "Fixes the thing.",
+			inputs: { mode: "full" },
+		});
 
 		expect(newBody()).toMatch(
 			/^Fixes the thing\.\n\n<!-- interlinked:start -->/,
@@ -155,7 +159,10 @@ describe("full mode", () => {
 	});
 
 	it("adds the label when the verdict is ai", async () => {
-		await runAction({ verdict: "ai", inputs: { "label-ai": "bot" } });
+		await runAction({
+			verdict: "ai",
+			inputs: { mode: "full", "label-ai": "bot" },
+		});
 
 		expect(requests).toContainEqual({
 			method: "POST",
@@ -165,7 +172,10 @@ describe("full mode", () => {
 	});
 
 	it("removes the label when the verdict is human", async () => {
-		await runAction({ verdict: "human", inputs: { "label-ai": "bot" } });
+		await runAction({
+			verdict: "human",
+			inputs: { mode: "full", "label-ai": "bot" },
+		});
 
 		expect(requests).toContainEqual({
 			method: "DELETE",
@@ -176,6 +186,12 @@ describe("full mode", () => {
 });
 
 describe("modes", () => {
+	it("only touches labels by default", async () => {
+		await runAction({ verdict: "ai" });
+
+		expect(requests.map((r) => r.method)).toEqual(["POST"]);
+	});
+
 	it("only touches labels in labels mode", async () => {
 		await runAction({ verdict: "ai", inputs: { mode: "labels" } });
 
@@ -196,6 +212,24 @@ describe("modes", () => {
 });
 
 describe("skipping", () => {
+	it.each(["MEMBER", "OWNER"])(
+		"skips %s authors by default",
+		async (association) => {
+			await runAction({ association });
+
+			expect(analyzeText).not.toHaveBeenCalled();
+		},
+	);
+
+	it("analyzes members when trusted associations are cleared", async () => {
+		await runAction({
+			association: "MEMBER",
+			inputs: { "trusted-author-associations": "" },
+		});
+
+		expect(analyzeText).toHaveBeenCalled();
+	});
+
 	it("skips allowed users", async () => {
 		await runAction({
 			author: "Dependabot",

@@ -491,16 +491,17 @@ function renderAnalysis(result, customMessage) {
 }
 //#endregion
 //#region src/utils/inputs.ts
-function readInput(name) {
+/** `fallback` applies only when the input isn't set at all, so an explicit empty value still wins. */
+function readInput(name, fallback = "") {
 	const envName = `INPUT_${name.replace(/ /g, "_").toUpperCase()}`;
-	return (process.env[envName] ?? "").trim();
+	return (process.env[envName] ?? fallback).trim();
 }
 function readBooleanInput(name) {
 	return readInput(name) === "true";
 }
 /** Accepts a JSON array or a comma-separated string. */
-function readListInput(name) {
-	const rawValue = readInput(name);
+function readListInput(name, fallback = "") {
+	const rawValue = readInput(name, fallback);
 	if (!rawValue) return [];
 	return parseList(rawValue).map((item) => String(item).trim().toLowerCase()).filter(Boolean);
 }
@@ -546,12 +547,14 @@ const KNOWN_AUTHOR_ASSOCIATIONS = [
 	"member",
 	"owner"
 ];
+const DEFAULT_MODE = "labels";
+const DEFAULT_TRUSTED_AUTHOR_ASSOCIATIONS = "member,owner";
 const DEFAULT_AGENT_LABEL = "likely-agent";
 function readConfig() {
 	return {
 		mode: readMode(),
 		allowedUsers: readListInput("allowed-users"),
-		trustedAuthorAssociations: readListInput("trusted-author-associations").filter((association) => KNOWN_AUTHOR_ASSOCIATIONS.includes(association)),
+		trustedAuthorAssociations: readListInput("trusted-author-associations", DEFAULT_TRUSTED_AUTHOR_ASSOCIATIONS).filter((association) => KNOWN_AUTHOR_ASSOCIATIONS.includes(association)),
 		agentLabel: readInput("label-ai") || DEFAULT_AGENT_LABEL,
 		agentMessage: readInput("message-ai"),
 		humanMessage: readInput("message-human"),
@@ -560,10 +563,10 @@ function readConfig() {
 	};
 }
 function readMode() {
-	const requestedMode = readInput("mode").toLowerCase() || "full";
+	const requestedMode = readInput("mode").toLowerCase() || DEFAULT_MODE;
 	if (isMode(requestedMode)) return requestedMode;
-	logWarning(`Invalid mode "${requestedMode}", falling back to "full".`);
-	return "full";
+	logWarning(`Invalid mode "${requestedMode}", falling back to "${DEFAULT_MODE}".`);
+	return DEFAULT_MODE;
 }
 function isMode(value) {
 	return MODES.includes(value);

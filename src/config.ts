@@ -14,6 +14,10 @@ const KNOWN_AUTHOR_ASSOCIATIONS = [
 	"owner",
 ];
 
+const DEFAULT_MODE: Mode = "labels";
+
+const DEFAULT_TRUSTED_AUTHOR_ASSOCIATIONS = "member,owner";
+
 const DEFAULT_AGENT_LABEL = "likely-agent";
 
 export interface Config {
@@ -33,6 +37,7 @@ export function readConfig(): Config {
 		allowedUsers: readListInput("allowed-users"),
 		trustedAuthorAssociations: readListInput(
 			"trusted-author-associations",
+			DEFAULT_TRUSTED_AUTHOR_ASSOCIATIONS,
 		).filter((association) => KNOWN_AUTHOR_ASSOCIATIONS.includes(association)),
 		agentLabel: readInput("label-ai") || DEFAULT_AGENT_LABEL,
 		agentMessage: readInput("message-ai"),
@@ -43,14 +48,16 @@ export function readConfig(): Config {
 }
 
 function readMode(): Mode {
-	const requestedMode = readInput("mode").toLowerCase() || "full";
+	const requestedMode = readInput("mode").toLowerCase() || DEFAULT_MODE;
 
 	if (isMode(requestedMode)) {
 		return requestedMode;
 	}
 
-	logWarning(`Invalid mode "${requestedMode}", falling back to "full".`);
-	return "full";
+	logWarning(
+		`Invalid mode "${requestedMode}", falling back to "${DEFAULT_MODE}".`,
+	);
+	return DEFAULT_MODE;
 }
 
 function isMode(value: string): value is Mode {

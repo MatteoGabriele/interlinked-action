@@ -1,6 +1,7 @@
-export function readInput(name: string) {
+/** `fallback` applies only when the input isn't set at all, so an explicit empty value still wins. */
+export function readInput(name: string, fallback = "") {
 	const envName = `INPUT_${name.replace(/ /g, "_").toUpperCase()}`;
-	return (process.env[envName] ?? "").trim();
+	return (process.env[envName] ?? fallback).trim();
 }
 
 export function readBooleanInput(name: string) {
@@ -8,8 +9,8 @@ export function readBooleanInput(name: string) {
 }
 
 /** Accepts a JSON array or a comma-separated string. */
-export function readListInput(name: string) {
-	const rawValue = readInput(name);
+export function readListInput(name: string, fallback = "") {
+	const rawValue = readInput(name, fallback);
 	if (!rawValue) {
 		return [];
 	}
