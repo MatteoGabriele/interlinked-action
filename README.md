@@ -9,7 +9,6 @@
 
 <p align="center">
   <a href="https://github.com/MatteoGabriele/interlinked-action/releases/latest"><img src="https://img.shields.io/github/v/release/MatteoGabriele/interlinked-action?label=release&color=8b5cf6" alt="Latest release"></a>
-  <a href="https://www.npmjs.com/package/@unveil/interlinked"><img src="https://img.shields.io/npm/v/@unveil/interlinked?label=interlinked&color=8b5cf6" alt="interlinked version"></a>
   <img src="https://img.shields.io/badge/runtime-node24-339933?logo=nodedotjs&logoColor=white" alt="Runs on Node 24">
   <a href="./package.json"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
