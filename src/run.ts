@@ -1,13 +1,18 @@
 import { readFileSync } from "node:fs";
 import { type AnalyzeTextResult, analyzeText } from "@unveil/interlinked";
-import { appendAnalysisBlock, stripAnalysisBlock } from "./analysis/marker";
+import {
+	appendAnalysisBlock,
+	stripAnalysisBlock,
+	wrapAnalysisComment,
+} from "./analysis/marker";
 import { renderAnalysis } from "./analysis/render";
 import {
 	type Config,
 	readConfig,
+	shouldPublishAnalysis,
 	shouldSyncLabel,
-	shouldUpdateDescription,
 } from "./config";
+import { upsertAnalysisComment } from "./github/comments";
 import { addAgentLabel } from "./github/labels";
 import { closePullRequest, updatePullRequestBody } from "./github/pull-request";
 import { fetchPullRequestTemplate } from "./github/template";
@@ -68,6 +73,28 @@ function warnOnError(error: Error) {
 	logWarning(error.message);
 }
 
+async function publishAnalysis(
+	pull: PullRequest,
+	repo: string,
+	description: string,
+	analysis: string,
+	config: Config,
+) {
+	if (config.analysisLocation === "comment") {
+		await upsertAnalysisComment(
+			repo,
+			pull.number,
+			wrapAnalysisComment(analysis),
+		);
+		return;
+	}
+
+	const updatedBody = appendAnalysisBlock(description, analysis);
+	if (updatedBody !== pull.body) {
+		await updatePullRequestBody(repo, pull.number, updatedBody);
+	}
+}
+
 export async function run() {
 	const event = readPullRequestEvent();
 	const pull = event.pull_request;
@@ -103,13 +130,10 @@ export async function run() {
 	);
 	appendJobSummary(analysis);
 
-	if (shouldUpdateDescription(config.mode)) {
-		const updatedBody = appendAnalysisBlock(description, analysis);
-		if (updatedBody !== pull.body) {
-			await updatePullRequestBody(repo, pull.number, updatedBody).catch(
-				warnOnError,
-			);
-		}
+	if (shouldPublishAnalysis(config.mode)) {
+		await publishAnalysis(pull, repo, description, analysis, config).catch(
+			warnOnError,
+		);
 	}
 
 	if (isAgentWritten && shouldSyncLabel(config.mode)) {

@@ -5,6 +5,10 @@ const MODES = ["full", "labels", "description", "silent"] as const;
 
 export type Mode = (typeof MODES)[number];
 
+const ANALYSIS_LOCATIONS = ["description", "comment"] as const;
+
+export type AnalysisLocation = (typeof ANALYSIS_LOCATIONS)[number];
+
 const KNOWN_AUTHOR_ASSOCIATIONS = [
 	"collaborator",
 	"contributor",
@@ -16,12 +20,15 @@ const KNOWN_AUTHOR_ASSOCIATIONS = [
 
 const DEFAULT_MODE: Mode = "labels";
 
+const DEFAULT_ANALYSIS_LOCATION: AnalysisLocation = "comment";
+
 const DEFAULT_TRUSTED_AUTHOR_ASSOCIATIONS = "member,owner";
 
 const DEFAULT_AGENT_LABEL = "likely-agent";
 
 export interface Config {
 	mode: Mode;
+	analysisLocation: AnalysisLocation;
 	allowedUsers: string[];
 	trustedAuthorAssociations: string[];
 	agentLabel: string;
@@ -33,7 +40,12 @@ export interface Config {
 
 export function readConfig(): Config {
 	return {
-		mode: readMode(),
+		mode: readChoice("mode", MODES, DEFAULT_MODE),
+		analysisLocation: readChoice(
+			"analysis-location",
+			ANALYSIS_LOCATIONS,
+			DEFAULT_ANALYSIS_LOCATION,
+		),
 		allowedUsers: readListInput("allowed-users"),
 		trustedAuthorAssociations: readListInput(
 			"trusted-author-associations",
@@ -47,24 +59,22 @@ export function readConfig(): Config {
 	};
 }
 
-function readMode(): Mode {
-	const requestedMode = readInput("mode").toLowerCase() || DEFAULT_MODE;
+function readChoice<T extends string>(
+	name: string,
+	choices: readonly T[],
+	fallback: T,
+): T {
+	const requested = readInput(name).toLowerCase() || fallback;
 
-	if (isMode(requestedMode)) {
-		return requestedMode;
+	if ((choices as readonly string[]).includes(requested)) {
+		return requested as T;
 	}
 
-	logWarning(
-		`Invalid mode "${requestedMode}", falling back to "${DEFAULT_MODE}".`,
-	);
-	return DEFAULT_MODE;
+	logWarning(`Invalid ${name} "${requested}", falling back to "${fallback}".`);
+	return fallback;
 }
 
-function isMode(value: string): value is Mode {
-	return (MODES as readonly string[]).includes(value);
-}
-
-export function shouldUpdateDescription(mode: Mode) {
+export function shouldPublishAnalysis(mode: Mode) {
 	return mode === "full" || mode === "description";
 }
 

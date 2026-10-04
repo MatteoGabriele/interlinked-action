@@ -13,3 +13,11 @@ export function stripAnalysisBlock(body: string) {
 export function appendAnalysisBlock(description: string, analysis: string) {
 	return `${description}\n\n${START_MARKER}\n---\n\n${analysis}\n${END_MARKER}\n`;
 }
+
+export function wrapAnalysisComment(analysis: string) {
+	return `${START_MARKER}\n${analysis}\n${END_MARKER}`;
+}
+
+export function isAnalysisComment(body: string) {
+	return body.startsWith(START_MARKER);
+}

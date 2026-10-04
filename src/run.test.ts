@@ -23,6 +23,7 @@ interface Setup {
 	association?: string;
 	inputs?: Record<string, string>;
 	template?: string;
+	comments?: object[];
 }
 
 let dir: string;
@@ -49,6 +50,7 @@ async function runAction({
 	association = "CONTRIBUTOR",
 	inputs = {},
 	template,
+	comments = [],
 }: Setup = {}) {
 	vi.mocked(analyzeText).mockReturnValue({
 		verdict,
@@ -83,6 +85,9 @@ async function runAction({
 		vi.fn(async (url: string, init: RequestInit = {}) => {
 			const path = url.replace("https://api.github.com", "");
 			const method = init.method ?? "GET";
+			if (method === "GET" && path.includes(`/issues/${PR}/comments`)) {
+				return Response.json(comments);
+			}
 			if (method === "GET") {
 				const found =
 					template &&
@@ -132,7 +137,10 @@ describe("analysis", () => {
 	});
 
 	it("ignores its own previous analysis when scoring a rerun", async () => {
-		await runAction({ body: "Fixes the thing.", inputs: { mode: "full" } });
+		await runAction({
+			body: "Fixes the thing.",
+			inputs: { mode: "full", "analysis-location": "description" },
+		});
 		const firstRunBody = newBody() as string;
 
 		await runAction({ body: firstRunBody });
@@ -149,7 +157,7 @@ describe("full mode", () => {
 		await runAction({
 			verdict: "ai",
 			body: "Fixes the thing.",
-			inputs: { mode: "full" },
+			inputs: { mode: "full", "analysis-location": "description" },
 		});
 
 		expect(newBody()).toMatch(
@@ -185,6 +193,60 @@ describe("full mode", () => {
 	});
 });
 
+describe("comment location", () => {
+	const inputs = { mode: "description" };
+
+	it("posts the analysis as a comment by default", async () => {
+		await runAction({ verdict: "ai", inputs });
+
+		expect(newBody()).toBeUndefined();
+		expect(requests).toContainEqual({
+			method: "POST",
+			path: `/repos/${REPO}/issues/${PR}/comments`,
+			body: {
+				body: expect.stringMatching(
+					/^<!-- interlinked:start -->\n[\s\S]*Reads like an agent wrote it/,
+				),
+			},
+		});
+	});
+
+	it("edits its previous comment on reruns", async () => {
+		await runAction({
+			inputs,
+			comments: [
+				{ id: 1, body: "Nice!", user: { type: "User" } },
+				{
+					id: 2,
+					body: "<!-- interlinked:start -->\nold\n<!-- interlinked:end -->",
+					user: { type: "Bot" },
+				},
+			],
+		});
+
+		expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+			`PATCH /repos/${REPO}/issues/comments/2`,
+		]);
+	});
+
+	it("ignores marker comments written by people", async () => {
+		await runAction({
+			inputs,
+			comments: [
+				{
+					id: 3,
+					body: "<!-- interlinked:start -->\nfake\n<!-- interlinked:end -->",
+					user: { type: "User" },
+				},
+			],
+		});
+
+		expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+			`POST /repos/${REPO}/issues/${PR}/comments`,
+		]);
+	});
+});
+
 describe("modes", () => {
 	it("only touches labels by default", async () => {
 		await runAction({ verdict: "ai" });
@@ -198,10 +260,12 @@ describe("modes", () => {
 		expect(requests.map((r) => r.method)).toEqual(["POST"]);
 	});
 
-	it("only touches the description in description mode", async () => {
+	it("only publishes the analysis in description mode", async () => {
 		await runAction({ verdict: "ai", inputs: { mode: "description" } });
 
-		expect(requests.map((r) => r.method)).toEqual(["PATCH"]);
+		expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+			`POST /repos/${REPO}/issues/${PR}/comments`,
+		]);
 	});
 
 	it("writes nothing back to the PR in silent mode", async () => {

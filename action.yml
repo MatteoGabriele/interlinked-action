@@ -22,6 +22,10 @@ inputs:
     description: "How interlinked should act on its findings: 'full' (description and labels), 'labels' (labels only), 'description' (description only), or 'silent' (outputs and job summary only)."
     required: false
     default: "labels"
+  analysis-location:
+    description: "Where to publish the analysis when the mode writes it: 'comment' (a separate PR comment, edited in place on reruns) or 'description' (appended to the PR description). The PR author can edit a description block, so it can be altered or removed; use 'comment' when that matters."
+    required: false
+    default: "comment"
   label-ai:
     description: "Label to add when the description reads as agent-written. Never removed automatically; a maintainer clears it."
     required: false

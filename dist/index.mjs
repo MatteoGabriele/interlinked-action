@@ -459,6 +459,12 @@ function stripAnalysisBlock(body) {
 function appendAnalysisBlock(description, analysis) {
 	return `${description}\n\n${START_MARKER}\n---\n\n${analysis}\n${END_MARKER}\n`;
 }
+function wrapAnalysisComment(analysis) {
+	return `${START_MARKER}\n${analysis}\n${END_MARKER}`;
+}
+function isAnalysisComment(body) {
+	return body.startsWith(START_MARKER);
+}
 //#endregion
 //#region src/analysis/render.ts
 const ICONS_BASE_URL = "https://raw.githubusercontent.com/MatteoGabriele/interlinked/main/icons";
@@ -539,6 +545,7 @@ const MODES = [
 	"description",
 	"silent"
 ];
+const ANALYSIS_LOCATIONS = ["description", "comment"];
 const KNOWN_AUTHOR_ASSOCIATIONS = [
 	"collaborator",
 	"contributor",
@@ -548,11 +555,13 @@ const KNOWN_AUTHOR_ASSOCIATIONS = [
 	"owner"
 ];
 const DEFAULT_MODE = "labels";
+const DEFAULT_ANALYSIS_LOCATION = "comment";
 const DEFAULT_TRUSTED_AUTHOR_ASSOCIATIONS = "member,owner";
 const DEFAULT_AGENT_LABEL = "likely-agent";
 function readConfig() {
 	return {
-		mode: readMode(),
+		mode: readChoice("mode", MODES, DEFAULT_MODE),
+		analysisLocation: readChoice("analysis-location", ANALYSIS_LOCATIONS, DEFAULT_ANALYSIS_LOCATION),
 		allowedUsers: readListInput("allowed-users"),
 		trustedAuthorAssociations: readListInput("trusted-author-associations", DEFAULT_TRUSTED_AUTHOR_ASSOCIATIONS).filter((association) => KNOWN_AUTHOR_ASSOCIATIONS.includes(association)),
 		agentLabel: readInput("label-ai") || DEFAULT_AGENT_LABEL,
@@ -562,16 +571,13 @@ function readConfig() {
 		shouldFailOnAgent: readBooleanInput("fail-on-ai")
 	};
 }
-function readMode() {
-	const requestedMode = readInput("mode").toLowerCase() || DEFAULT_MODE;
-	if (isMode(requestedMode)) return requestedMode;
-	logWarning(`Invalid mode "${requestedMode}", falling back to "${DEFAULT_MODE}".`);
-	return DEFAULT_MODE;
+function readChoice(name, choices, fallback) {
+	const requested = readInput(name).toLowerCase() || fallback;
+	if (choices.includes(requested)) return requested;
+	logWarning(`Invalid ${name} "${requested}", falling back to "${fallback}".`);
+	return fallback;
 }
-function isMode(value) {
-	return MODES.includes(value);
-}
-function shouldUpdateDescription(mode) {
+function shouldPublishAnalysis(mode) {
 	return mode === "full" || mode === "description";
 }
 function shouldSyncLabel(mode) {
@@ -597,11 +603,26 @@ async function warnOnFailedResponse(response, failureMessage) {
 	logWarning(`${failureMessage}: ${response.status} ${await response.text()}`);
 }
 //#endregion
+//#region src/github/comments.ts
+/** Only bot comments count, so a commenter can't plant one for us to overwrite. */
+async function findAnalysisComment(repo, pullNumber) {
+	const response = await githubRequest(`/repos/${repo}/issues/${pullNumber}/comments?per_page=100`);
+	if (!response.ok) return;
+	return (await response.json()).find((comment) => comment.user?.type === "Bot" && isAnalysisComment(comment.body ?? ""));
+}
+/** Edits the previous run's comment in place instead of posting a new one each run. */
+async function upsertAnalysisComment(repo, pullNumber, body) {
+	const existing = await findAnalysisComment(repo, pullNumber);
+	await warnOnFailedResponse(existing ? await githubRequest(`/repos/${repo}/issues/comments/${existing.id}`, {
+		method: "PATCH",
+		body: JSON.stringify({ body })
+	}) : await githubRequest(`/repos/${repo}/issues/${pullNumber}/comments`, {
+		method: "POST",
+		body: JSON.stringify({ body })
+	}), "Couldn't post the analysis comment");
+}
+//#endregion
 //#region src/github/labels.ts
-/**
-* Only ever adds the label. Removing it is left to maintainers, so an author
-* can't edit the description until a rerun clears the flag.
-*/
 async function addAgentLabel(repo, pullNumber, label) {
 	await warnOnFailedResponse(await githubRequest(`/repos/${repo}/issues/${pullNumber}/labels`, {
 		method: "POST",
@@ -669,6 +690,14 @@ function publishOutputs(result) {
 function warnOnError(error) {
 	logWarning(error.message);
 }
+async function publishAnalysis(pull, repo, description, analysis, config) {
+	if (config.analysisLocation === "comment") {
+		await upsertAnalysisComment(repo, pull.number, wrapAnalysisComment(analysis));
+		return;
+	}
+	const updatedBody = appendAnalysisBlock(description, analysis);
+	if (updatedBody !== pull.body) await updatePullRequestBody(repo, pull.number, updatedBody);
+}
 async function run() {
 	const event = readPullRequestEvent();
 	const pull = event.pull_request;
@@ -691,10 +720,7 @@ async function run() {
 	publishOutputs(result);
 	const analysis = renderAnalysis(result, isAgentWritten ? config.agentMessage : config.humanMessage);
 	appendJobSummary(analysis);
-	if (shouldUpdateDescription(config.mode)) {
-		const updatedBody = appendAnalysisBlock(description, analysis);
-		if (updatedBody !== pull.body) await updatePullRequestBody(repo, pull.number, updatedBody).catch(warnOnError);
-	}
+	if (shouldPublishAnalysis(config.mode)) await publishAnalysis(pull, repo, description, analysis, config).catch(warnOnError);
 	if (isAgentWritten && shouldSyncLabel(config.mode)) await addAgentLabel(repo, pull.number, config.agentLabel).catch(warnOnError);
 	if (isAgentWritten && config.shouldAutoClose) await closePullRequest(repo, pull.number).catch(warnOnError);
 	if (isAgentWritten && config.shouldFailOnAgent) {
