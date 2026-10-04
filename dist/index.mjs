@@ -448,7 +448,7 @@ function analyzeText(markdown, options = {}) {
 	};
 }
 //#endregion
-//#region src/index.ts
+//#region src/run.ts
 const MODES = [
 	"full",
 	"labels",
@@ -491,7 +491,8 @@ function listInput(name) {
 	return items.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
 }
 function getMode() {
-	const value = input("mode").toLowerCase() || "full";
+	const value = input("mode").toLowerCase();
+	if (value.trim() === "") return "labels";
 	if (MODES.includes(value)) return value;
 	console.log(`::warning::Invalid mode "${value}", falling back to "full".`);
 	return "full";
@@ -519,7 +520,6 @@ function api(path, init = {}) {
 		}
 	});
 }
-/** The template as of the PR's base, so a PR can't edit it to dodge signals. */
 async function fetchTemplate(repo, ref) {
 	for (const path of TEMPLATE_PATHS) {
 		const response = await api(`/repos/${repo}/contents/${path}?ref=${ref}`, { headers: { Accept: "application/vnd.github.raw+json" } });
@@ -529,10 +529,12 @@ async function fetchTemplate(repo, ref) {
 async function syncLabel(repo, number, isAi) {
 	const label = input("label-ai") || DEFAULT_LABEL_AI;
 	const path = `/repos/${repo}/issues/${number}/labels`;
-	const response = isAi ? await api(path, {
+	let response;
+	if (isAi) response = await api(path, {
 		method: "POST",
 		body: JSON.stringify({ labels: [label] })
-	}) : await api(`${path}/${encodeURIComponent(label)}`, { method: "DELETE" });
+	});
+	else response = await api(`${path}/${encodeURIComponent(label)}`, { method: "DELETE" });
 	if (!response.ok && response.status !== 404) console.log(`::warning::Couldn't update label "${label}": ${response.status} ${await response.text()}`);
 }
 /** Wraps the analysis in the PR body so reruns replace it instead of stacking. */
@@ -601,7 +603,12 @@ async function run() {
 	}
 	const mode = getMode();
 	const repo = event.repository.full_name;
-	const template = await fetchTemplate(repo, pull.base.sha).catch(() => void 0);
+	let template;
+	try {
+		template = await fetchTemplate(repo, pull.base.sha);
+	} catch (error) {
+		console.log(`::warning::Couldn't fetch the PR template, analyzing without it: ${error.message}`);
+	}
 	const description = stripBlock(pull.body ?? "");
 	const result = analyzeText(description, { template });
 	console.log(`#${pull.number}: ${result.verdict} (probability ${result.probability})`);
@@ -620,6 +627,8 @@ async function run() {
 		process.exitCode = 1;
 	}
 }
+//#endregion
+//#region src/index.ts
 run().catch((error) => {
 	console.log(`::error::${error.message}`);
 	process.exitCode = 1;

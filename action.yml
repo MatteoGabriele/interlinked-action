@@ -25,7 +25,7 @@ inputs:
   label-ai:
     description: "Label to add when the description reads as agent-written, and remove when it doesn't."
     required: false
-    default: "interlinked:agent-written"
+    default: "agent-written"
   auto-close:
     description: "Whether to automatically close PRs whose description reads as agent-written."
     required: false
