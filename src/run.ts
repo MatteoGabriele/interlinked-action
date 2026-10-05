@@ -68,7 +68,6 @@ function publishOutputs(result: AnalyzeTextResult) {
 	setOutput("signals", JSON.stringify(result.signals));
 }
 
-/** Writing back is best effort: outputs and summary still stand. */
 function warnOnError(error: Error) {
 	logWarning(error.message);
 }
